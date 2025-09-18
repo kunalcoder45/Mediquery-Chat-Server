@@ -30,8 +30,7 @@ admin.initializeApp({
 
 // Middleware
 app.use(cors({
-  // origin: 'http://localhost:9002',
-  origin: '*',
+  origin: process.env.FRONTEND_URL,
   credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));
