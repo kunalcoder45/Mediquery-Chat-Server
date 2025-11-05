@@ -198,39 +198,102 @@ app.get("/api/chat/conversations/:conversationId", authenticateToken, async (req
   }
 });
 
-app.post("/api/chat/conversations/:conversationId/messages", authenticateToken, chatLimiter, async (req, res) => {
-  try {
-    const { conversationId } = req.params;
-    const { content, role = "user", metadata } = req.body;
+// app.post("/api/chat/conversations/:conversationId/messages", authenticateToken, chatLimiter, async (req, res) => {
+//   try {
+//     const { conversationId } = req.params;
+//     const { content, role = "user", metadata } = req.body;
 
-    if (!content?.trim()) return res.status(400).json({ error: "Message content is required" });
+//     if (!content?.trim()) return res.status(400).json({ error: "Message content is required" });
 
-    const conversation = await prisma.conversation.findFirst({
-      where: { id: conversationId, userId: req.user.uid },
-    });
-    if (!conversation) return res.status(404).json({ error: "Conversation not found" });
+//     const conversation = await prisma.conversation.findFirst({
+//       where: { id: conversationId, userId: req.user.uid },
+//     });
+//     if (!conversation) return res.status(404).json({ error: "Conversation not found" });
 
-    const message = await prisma.message.create({
-      data: {
-        content: content.trim(),
-        role,
-        conversationId,
-        userId: req.user.uid,
-        metadata: metadata ? JSON.stringify(metadata) : null,
-      },
-    });
+//     const message = await prisma.message.create({
+//       data: {
+//         content: content.trim(),
+//         role,
+//         conversationId,
+//         userId: req.user.uid,
+//         metadata: metadata ? JSON.stringify(metadata) : null,
+//       },
+//     });
 
-    await prisma.conversation.update({
-      where: { id: conversationId },
-      data: { updatedAt: new Date() },
-    });
+//     await prisma.conversation.update({
+//       where: { id: conversationId },
+//       data: { updatedAt: new Date() },
+//     });
 
-    res.json({ message });
-  } catch (error) {
-    console.error("Error sending message:", error);
-    res.status(500).json({ error: "Failed to send message" });
+//     res.json({ message });
+//   } catch (error) {
+//     console.error("Error sending message:", error);
+//     res.status(500).json({ error: "Failed to send message" });
+//   }
+// });
+
+
+app.post(
+  "/api/chat/conversations/:conversationId/messages",
+  authenticateToken,
+  chatLimiter,
+  async (req, res) => {
+    try {
+      const { conversationId } = req.params;
+      const { content, role = "user", metadata } = req.body;
+
+      // 🧩 1️⃣ Validate input
+      if (!conversationId || typeof conversationId !== "string") {
+        return res.status(400).json({ error: "Invalid or missing conversationId" });
+      }
+      if (!content || !content.trim()) {
+        return res.status(400).json({ error: "Message content is required" });
+      }
+
+      // 🧩 2️⃣ Check if conversation exists
+      const conversation = await prisma.conversation.findFirst({
+        where: { id: conversationId, userId: req.user.uid },
+      });
+      if (!conversation) {
+        console.warn(`❗ No conversation found for user ${req.user.uid}`);
+        return res.status(404).json({ error: "Conversation not found" });
+      }
+
+      // 🧩 3️⃣ Create message
+      const message = await prisma.message.create({
+        data: {
+          content: content.trim(),
+          role,
+          conversationId,
+          userId: req.user.uid,
+          metadata: metadata ? JSON.stringify(metadata) : null,
+        },
+      });
+
+      // 🧩 4️⃣ Update conversation last active timestamp
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: { updatedAt: new Date() },
+      });
+
+      console.log(`✅ Message created by ${req.user.uid} in ${conversationId}`);
+      res.status(201).json({ success: true, message });
+    } catch (error) {
+      console.error("💥 Error sending message:", error);
+
+      // Prisma error handling
+      if (error.code === "P2025") {
+        return res.status(404).json({ error: "Conversation not found (Prisma P2025)" });
+      }
+
+      res.status(500).json({
+        error: "Internal Server Error while sending message",
+        details: process.env.NODE_ENV === "development" ? error.message : undefined,
+      });
+    }
   }
-});
+);
+
 
 // Update, delete, search routes
 app.put("/api/chat/conversations/:conversationId", authenticateToken, async (req, res) => {
@@ -359,3 +422,4 @@ process.on("SIGTERM", async () => {
   await prisma.$disconnect();
   process.exit(0);
 });
+
